@@ -1,9 +1,10 @@
 import json
 import requests
 from tqdm import tqdm
+from pprint import pprint
 
 Token_VKAPI = ""
-OAuth = "y0__xDaifaeAhjblgMgjI3C9RL7UCitZbUYOlmsCOYjVLCYPDnQUA"
+OAuth = ""
 
 
 class VKPHOTO:
@@ -28,18 +29,18 @@ class VKPHOTO:
         response = requests.get(self.URL, params=params)
         return response.json()["response"]["items"]
 
-    def download_photo(self):
+    def get_max_size_of_photo(self):
         photos = self.get_photos()
-        for i in tqdm(range(len(photos)), desc="Downloading photos", unit="photo"):
-            resp = requests.get(photos[i]["sizes"][4]["url"])
-            with open(f"{photos[i]['likes']['count']}.jpg", "wb") as f:
-                f.write(resp.content)
+        links = []
+        for i in range(len(photos)):
+            links.append(max(photos[i]["sizes"], key=lambda x: x["height"] * x["width"]))
+        return links
 
     def save_in_json(self):
         info = []
         for i in tqdm(range(len(self.get_photos())), desc="Saving photo info", unit="photo"):
             photo_info = {"file_name": f"{self.get_photos()[i]['likes']['count']}.jpg",
-                          "size": self.get_photos()[i]["sizes"][4]["type"]}
+                          "size": self.get_max_size_of_photo()[i]["type"]}
             info.append(photo_info)
         with open("info.json", "w") as g:
             json.dump(info, g, ensure_ascii=False, indent=2)
@@ -56,38 +57,36 @@ class SAVEONYANDEX:
             "Authorization": self.token
         }
 
-    def get_params(self):
-        return {
-            "path": "reserved"
-        }
-
     def build_folder(self):
         URL_folder = f"{self.yd_URL}/v1/disk/resources"
-        params = self.get_params()
+        params = {"path": "reserved"}
         headers = self.headers()
         response = requests.put(URL_folder, params=params, headers=headers)
         return response
 
-    def get_FILE_URL(self, filename):
-        File_URL = f"{self.yd_URL}/v1/disk/resources/upload"
-        params = {"path": f"reserved/{filename}"}
-        headers = self.headers()
-        response = requests.get(File_URL, params=params, headers=headers)
-        return response.json()["href"]
-
-    def upload_to_yandex(self, filename):
-        file_url = self.get_FILE_URL(filename)
-        with open(filename, 'rb') as f:
-            requests.put(file_url, files={"file": f})
+    def upload_to_yandex(self, url, filename):
+        file_url = f"{self.yd_URL}/v1/disk/resources/upload"
+        params = {"url": url,
+                  "path": f"reserved/{filename}"}
+        response = requests.post(file_url, params=params, headers=self.headers())
+        return response
 
 
 vk = VKPHOTO(350760736, Token_VKAPI)
-vk.download_photo()
-vk.save_in_json()
 
+yad = SAVEONYANDEX(OAuth)
+photos = vk.get_photos()
+vk.save_in_json()
 a = SAVEONYANDEX(OAuth)
 a.build_folder()
 
-for i in tqdm(range(len(vk.get_photos())), desc="Uploading photos to Yandex", unit="photo"):
-    filename = f"{vk.get_photos()[i]['likes']['count']}.jpg"
-    a.upload_to_yandex(filename)
+likes_count = {}
+for i in tqdm(range(len(photos)), desc="uploading_photos", unit='photos'):
+    name = f"{photos[i]["likes"]["count"]}"
+    if name in likes_count:
+        likes_count[name] += 1
+        name += f"_{photos[i]["date"]}"
+        a.upload_to_yandex(vk.get_max_size_of_photo()[i]["url"], name)
+    else:
+        likes_count[name] = 1
+        a.upload_to_yandex(vk.get_max_size_of_photo()[i]["url"], name)
